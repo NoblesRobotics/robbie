@@ -1,6 +1,9 @@
 package org.firstinspires.ftc.teamcode;
 
+import com.qualcomm.robotcore.eventloop.opmode.Autonomous;
 import com.qualcomm.robotcore.eventloop.opmode.LinearOpMode;
+import com.qualcomm.robotcore.eventloop.opmode.TeleOp;
+import com.qualcomm.robotcore.hardware.DcMotor;
 
 import org.firstinspires.ftc.robotcore.external.hardware.camera.WebcamName;
 import org.openftc.apriltag.AprilTagDetection;
@@ -26,6 +29,7 @@ import org.openftc.easyopencv.OpenCvPipeline;
 
 import java.util.ArrayList;
 
+@Autonomous(name="Basic: Linear OpMode", group="Linear Opmode")
 public class Auto extends LinearOpMode {
     OpenCvCamera camera;
     AprilTagDetectionPipeline aprilTagDetectionPipeline;
@@ -51,6 +55,12 @@ public class Auto extends LinearOpMode {
     final float THRESHOLD_HIGH_DECIMATION_RANGE_METERS = 1.0f;
     final int THRESHOLD_NUM_FRAMES_NO_DETECTION_BEFORE_LOW_DECIMATION = 4;
 
+    int lastAprilTagRead = -1;
+    DcMotor tlMotor,trMotor,blMotor,brMotor;
+    private final double TICKS_PER_REV = 537.6;
+    private final double MM_PER_REV = Math.PI * 96;
+    private final double MM_PER_TILE = 609.6;
+
     @Override
     public void runOpMode()
     {
@@ -74,65 +84,109 @@ public class Auto extends LinearOpMode {
             }
         });
 
+        tlMotor = hardwareMap.get(DcMotor.class,"tl_motor");
+        trMotor = hardwareMap.get(DcMotor.class,"tr_motor");
+        blMotor = hardwareMap.get(DcMotor.class,"bl_motor");
+        brMotor = hardwareMap.get(DcMotor.class,"br_motor");
+
         waitForStart();
 
-        telemetry.setMsTransmissionInterval(50);
-
-        while (opModeIsActive())
+        while ( lastAprilTagRead == -1 && numFramesWithoutDetection < 500 )
         {
-            // Calling getDetectionsUpdate() will only return an object if there was a new frame
-            // processed since the last time we called it. Otherwise, it will return null. This
-            // enables us to only run logic when there has been a new frame, as opposed to the
-            // getLatestDetections() method which will always return an object.
-            ArrayList<AprilTagDetection> detections = aprilTagDetectionPipeline.getDetectionsUpdate();
+            updateLastAprilTagRead();
+            sleep(20);
+        }
 
-            // If there's been a new frame...
-            if(detections != null)
+        drive(1.25);
+        if ( lastAprilTagRead == 0 || lastAprilTagRead == 2 ) {
+            if ( lastAprilTagRead == 0 ) turnNinety(-1);
+            else turnNinety(1);
+            drive(1);
+        }
+    }
+
+    private void drive(double distance) { drive(distance,1); }
+
+    private void drive(double distance,double speed) {
+        moveMotors(distance,distance,distance,distance,speed);
+    }
+
+    private void turnNinety(int turns) {
+        moveMotors(0.825 * turns,-0.825 * turns,0.825 * turns,-0.825 * turns,1);
+    }
+
+    private void moveMotors(double tlMove,double trMove,double blMove,double brMove,double speed) {
+        tlMotor.setTargetPosition((int) (-tlMove * MM_PER_TILE / MM_PER_REV * TICKS_PER_REV));
+        trMotor.setTargetPosition((int) (trMove * MM_PER_TILE / MM_PER_REV * TICKS_PER_REV));
+        blMotor.setTargetPosition((int) (-blMove * MM_PER_TILE / MM_PER_REV * TICKS_PER_REV));
+        brMotor.setTargetPosition((int) (brMove * MM_PER_TILE / MM_PER_REV * TICKS_PER_REV));
+        tlMotor.setMode(DcMotor.RunMode.RUN_TO_POSITION);
+        trMotor.setMode(DcMotor.RunMode.RUN_TO_POSITION);
+        blMotor.setMode(DcMotor.RunMode.RUN_TO_POSITION);
+        brMotor.setMode(DcMotor.RunMode.RUN_TO_POSITION);
+        tlMotor.setPower(speed);
+        trMotor.setPower(speed);
+        blMotor.setPower(speed);
+        brMotor.setPower(speed);
+        while ( tlMotor.isBusy() || trMotor.isBusy() || blMotor.isBusy() || brMotor.isBusy() ) {}
+        brMotor.setMode(DcMotor.RunMode.STOP_AND_RESET_ENCODER);
+        blMotor.setMode(DcMotor.RunMode.STOP_AND_RESET_ENCODER);
+        trMotor.setMode(DcMotor.RunMode.STOP_AND_RESET_ENCODER);
+        tlMotor.setMode(DcMotor.RunMode.STOP_AND_RESET_ENCODER);
+    }
+
+    private void updateLastAprilTagRead() {
+        // Calling getDetectionsUpdate() will only return an object if there was a new frame
+        // processed since the last time we called it. Otherwise, it will return null. This
+        // enables us to only run logic when there has been a new frame, as opposed to the
+        // getLatestDetections() method which will always return an object.
+        ArrayList<AprilTagDetection> detections = aprilTagDetectionPipeline.getDetectionsUpdate();
+
+        // If there's been a new frame...
+        if(detections != null)
+        {
+            telemetry.addData("FPS", camera.getFps());
+            telemetry.addData("Overhead ms", camera.getOverheadTimeMs());
+            telemetry.addData("Pipeline ms", camera.getPipelineTimeMs());
+
+            // If we don't see any tags
+            if(detections.size() == 0)
             {
-                telemetry.addData("FPS", camera.getFps());
-                telemetry.addData("Overhead ms", camera.getOverheadTimeMs());
-                telemetry.addData("Pipeline ms", camera.getPipelineTimeMs());
+                numFramesWithoutDetection++;
 
-                // If we don't see any tags
-                if(detections.size() == 0)
+                // If we haven't seen a tag for a few frames, lower the decimation
+                // so we can hopefully pick one up if we're e.g. far back
+                if(numFramesWithoutDetection >= THRESHOLD_NUM_FRAMES_NO_DETECTION_BEFORE_LOW_DECIMATION)
                 {
-                    numFramesWithoutDetection++;
-
-                    // If we haven't seen a tag for a few frames, lower the decimation
-                    // so we can hopefully pick one up if we're e.g. far back
-                    if(numFramesWithoutDetection >= THRESHOLD_NUM_FRAMES_NO_DETECTION_BEFORE_LOW_DECIMATION)
-                    {
-                        aprilTagDetectionPipeline.setDecimation(DECIMATION_LOW);
-                    }
+                    aprilTagDetectionPipeline.setDecimation(DECIMATION_LOW);
                 }
-                // We do see tags!
-                else
+            }
+            // We do see tags!
+            else
+            {
+                numFramesWithoutDetection = 0;
+
+                // If the target is within 1 meter, turn on high decimation to
+                // increase the frame rate
+                if(detections.get(0).pose.z < THRESHOLD_HIGH_DECIMATION_RANGE_METERS)
                 {
-                    numFramesWithoutDetection = 0;
-
-                    // If the target is within 1 meter, turn on high decimation to
-                    // increase the frame rate
-                    if(detections.get(0).pose.z < THRESHOLD_HIGH_DECIMATION_RANGE_METERS)
-                    {
-                        aprilTagDetectionPipeline.setDecimation(DECIMATION_HIGH);
-                    }
-
-                    for(AprilTagDetection detection : detections)
-                    {
-                        telemetry.addLine(String.format("\nDetected tag ID=%d", detection.id));
-                        telemetry.addLine(String.format("Translation X: %.2f feet", detection.pose.x*FEET_PER_METER));
-                        telemetry.addLine(String.format("Translation Y: %.2f feet", detection.pose.y*FEET_PER_METER));
-                        telemetry.addLine(String.format("Translation Z: %.2f feet", detection.pose.z*FEET_PER_METER));
-                        telemetry.addLine(String.format("Rotation Yaw: %.2f degrees", Math.toDegrees(detection.pose.yaw)));
-                        telemetry.addLine(String.format("Rotation Pitch: %.2f degrees", Math.toDegrees(detection.pose.pitch)));
-                        telemetry.addLine(String.format("Rotation Roll: %.2f degrees", Math.toDegrees(detection.pose.roll)));
-                    }
+                    aprilTagDetectionPipeline.setDecimation(DECIMATION_HIGH);
                 }
 
-                telemetry.update();
+                for(AprilTagDetection detection : detections)
+                {
+                    lastAprilTagRead = detection.id;
+                    telemetry.addLine(String.format("\nDetected tag ID=%d", detection.id));
+                    telemetry.addLine(String.format("Translation X: %.2f feet", detection.pose.x*FEET_PER_METER));
+                    telemetry.addLine(String.format("Translation Y: %.2f feet", detection.pose.y*FEET_PER_METER));
+                    telemetry.addLine(String.format("Translation Z: %.2f feet", detection.pose.z*FEET_PER_METER));
+                    telemetry.addLine(String.format("Rotation Yaw: %.2f degrees", Math.toDegrees(detection.pose.yaw)));
+                    telemetry.addLine(String.format("Rotation Pitch: %.2f degrees", Math.toDegrees(detection.pose.pitch)));
+                    telemetry.addLine(String.format("Rotation Roll: %.2f degrees", Math.toDegrees(detection.pose.roll)));
+                }
             }
 
-            sleep(20);
+            telemetry.update();
         }
     }
 }
