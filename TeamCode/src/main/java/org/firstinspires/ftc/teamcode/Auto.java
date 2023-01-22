@@ -5,6 +5,7 @@ import com.qualcomm.robotcore.eventloop.opmode.LinearOpMode;
 import com.qualcomm.robotcore.eventloop.opmode.TeleOp;
 import com.qualcomm.robotcore.hardware.DcMotor;
 
+import org.firstinspires.ftc.robotcore.external.Telemetry;
 import org.firstinspires.ftc.robotcore.external.hardware.camera.WebcamName;
 import org.openftc.apriltag.AprilTagDetection;
 import org.openftc.easyopencv.OpenCvCamera;
@@ -31,6 +32,20 @@ import java.util.ArrayList;
 
 @Autonomous(name="Basic: Linear OpMode", group="Linear Opmode")
 public class Auto extends LinearOpMode {
+    @Override
+    public void runOpMode() {
+        SignalReader reader = new SignalReader(this);
+
+        int signalStatus = -1;
+        waitForStart();
+        signalStatus = reader.getSignalStatus(telemetry);
+        telemetry.addData("signalStatus",signalStatus);
+        telemetry.update();
+        sleep(3000);
+    }
+}
+
+class SignalReader {
     OpenCvCamera camera;
     AprilTagDetectionPipeline aprilTagDetectionPipeline;
 
@@ -55,17 +70,14 @@ public class Auto extends LinearOpMode {
     final float THRESHOLD_HIGH_DECIMATION_RANGE_METERS = 1.0f;
     final int THRESHOLD_NUM_FRAMES_NO_DETECTION_BEFORE_LOW_DECIMATION = 4;
 
+    LinearOpMode opMode;
     int lastAprilTagRead = -1;
-    DcMotor tlMotor,trMotor,blMotor,brMotor;
-    private final double TICKS_PER_REV = 537.6;
-    private final double MM_PER_REV = Math.PI * 96;
-    private final double MM_PER_TILE = 609.6;
 
-    @Override
-    public void runOpMode()
-    {
-        int cameraMonitorViewId = hardwareMap.appContext.getResources().getIdentifier("cameraMonitorViewId", "id", hardwareMap.appContext.getPackageName());
-        camera = OpenCvCameraFactory.getInstance().createWebcam(hardwareMap.get(WebcamName.class, "Webcam 1"), cameraMonitorViewId);
+    public SignalReader(LinearOpMode opMode) {
+        this.opMode = opMode;
+
+        int cameraMonitorViewId = opMode.hardwareMap.appContext.getResources().getIdentifier("cameraMonitorViewId", "id", opMode.hardwareMap.appContext.getPackageName());
+        camera = OpenCvCameraFactory.getInstance().createWebcam(opMode.hardwareMap.get(WebcamName.class, "Webcam 1"), cameraMonitorViewId);
         aprilTagDetectionPipeline = new AprilTagDetectionPipeline(tagsize, fx, fy, cx, cy);
 
         camera.setPipeline(aprilTagDetectionPipeline);
@@ -83,59 +95,18 @@ public class Auto extends LinearOpMode {
 
             }
         });
+    }
 
-        tlMotor = hardwareMap.get(DcMotor.class,"tl_motor");
-        trMotor = hardwareMap.get(DcMotor.class,"tr_motor");
-        blMotor = hardwareMap.get(DcMotor.class,"bl_motor");
-        brMotor = hardwareMap.get(DcMotor.class,"br_motor");
-
-        waitForStart();
-
-        while ( lastAprilTagRead == -1 && numFramesWithoutDetection < 500 )
-        {
-            updateLastAprilTagRead();
-            sleep(20);
+    public int getSignalStatus(Telemetry telemetry) {
+        while ( lastAprilTagRead == -1 && numFramesWithoutDetection < 100 ) {
+            updateSignalStatus();
+            telemetry.addData("numFramesWithoutDetection",numFramesWithoutDetection);
+            telemetry.update();
         }
-
-        drive(1.25);
-        if ( lastAprilTagRead == 0 || lastAprilTagRead == 2 ) {
-            if ( lastAprilTagRead == 0 ) turnNinety(-1);
-            else turnNinety(1);
-            drive(1);
-        }
+        return lastAprilTagRead;
     }
 
-    private void drive(double distance) { drive(distance,1); }
-
-    private void drive(double distance,double speed) {
-        moveMotors(distance,distance,distance,distance,speed);
-    }
-
-    private void turnNinety(int turns) {
-        moveMotors(0.825 * turns,-0.825 * turns,0.825 * turns,-0.825 * turns,1);
-    }
-
-    private void moveMotors(double tlMove,double trMove,double blMove,double brMove,double speed) {
-        tlMotor.setTargetPosition((int) (-tlMove * MM_PER_TILE / MM_PER_REV * TICKS_PER_REV));
-        trMotor.setTargetPosition((int) (trMove * MM_PER_TILE / MM_PER_REV * TICKS_PER_REV));
-        blMotor.setTargetPosition((int) (-blMove * MM_PER_TILE / MM_PER_REV * TICKS_PER_REV));
-        brMotor.setTargetPosition((int) (brMove * MM_PER_TILE / MM_PER_REV * TICKS_PER_REV));
-        tlMotor.setMode(DcMotor.RunMode.RUN_TO_POSITION);
-        trMotor.setMode(DcMotor.RunMode.RUN_TO_POSITION);
-        blMotor.setMode(DcMotor.RunMode.RUN_TO_POSITION);
-        brMotor.setMode(DcMotor.RunMode.RUN_TO_POSITION);
-        tlMotor.setPower(speed);
-        trMotor.setPower(speed);
-        blMotor.setPower(speed);
-        brMotor.setPower(speed);
-        while ( tlMotor.isBusy() || trMotor.isBusy() || blMotor.isBusy() || brMotor.isBusy() ) {}
-        brMotor.setMode(DcMotor.RunMode.STOP_AND_RESET_ENCODER);
-        blMotor.setMode(DcMotor.RunMode.STOP_AND_RESET_ENCODER);
-        trMotor.setMode(DcMotor.RunMode.STOP_AND_RESET_ENCODER);
-        tlMotor.setMode(DcMotor.RunMode.STOP_AND_RESET_ENCODER);
-    }
-
-    private void updateLastAprilTagRead() {
+    private void updateSignalStatus() {
         // Calling getDetectionsUpdate() will only return an object if there was a new frame
         // processed since the last time we called it. Otherwise, it will return null. This
         // enables us to only run logic when there has been a new frame, as opposed to the
@@ -145,9 +116,9 @@ public class Auto extends LinearOpMode {
         // If there's been a new frame...
         if(detections != null)
         {
-            telemetry.addData("FPS", camera.getFps());
+            /*telemetry.addData("FPS", camera.getFps());
             telemetry.addData("Overhead ms", camera.getOverheadTimeMs());
-            telemetry.addData("Pipeline ms", camera.getPipelineTimeMs());
+            telemetry.addData("Pipeline ms", camera.getPipelineTimeMs());*/
 
             // If we don't see any tags
             if(detections.size() == 0)
@@ -176,17 +147,17 @@ public class Auto extends LinearOpMode {
                 for(AprilTagDetection detection : detections)
                 {
                     lastAprilTagRead = detection.id;
-                    telemetry.addLine(String.format("\nDetected tag ID=%d", detection.id));
+                    /*telemetry.addLine(String.format("\nDetected tag ID=%d", detection.id));
                     telemetry.addLine(String.format("Translation X: %.2f feet", detection.pose.x*FEET_PER_METER));
                     telemetry.addLine(String.format("Translation Y: %.2f feet", detection.pose.y*FEET_PER_METER));
                     telemetry.addLine(String.format("Translation Z: %.2f feet", detection.pose.z*FEET_PER_METER));
                     telemetry.addLine(String.format("Rotation Yaw: %.2f degrees", Math.toDegrees(detection.pose.yaw)));
                     telemetry.addLine(String.format("Rotation Pitch: %.2f degrees", Math.toDegrees(detection.pose.pitch)));
-                    telemetry.addLine(String.format("Rotation Roll: %.2f degrees", Math.toDegrees(detection.pose.roll)));
+                    telemetry.addLine(String.format("Rotation Roll: %.2f degrees", Math.toDegrees(detection.pose.roll)));*/
                 }
             }
 
-            telemetry.update();
+            //telemetry.update();
         }
     }
 }
