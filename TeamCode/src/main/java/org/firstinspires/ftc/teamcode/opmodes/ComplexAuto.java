@@ -1,11 +1,14 @@
-package org.firstinspires.ftc.teamcode;
+package org.firstinspires.ftc.teamcode.opmodes;
 
 import com.qualcomm.robotcore.eventloop.opmode.Autonomous;
 import com.qualcomm.robotcore.eventloop.opmode.LinearOpMode;
-import com.qualcomm.robotcore.eventloop.opmode.TeleOp;
 
-@Autonomous(name="Simplest Auto",group="Exercises")
-public class SimplestAuto extends LinearOpMode {
+import org.firstinspires.ftc.teamcode.control.Drivetrain;
+import org.firstinspires.ftc.teamcode.control.SignalReader;
+import org.firstinspires.ftc.teamcode.control.Slide;
+
+@Autonomous(name="Complex Auto",group="Exercises")
+public class ComplexAuto extends LinearOpMode {
     @Override
     public void runOpMode() throws InterruptedException {
         telemetry.addData("Mode","initializing");
@@ -15,6 +18,8 @@ public class SimplestAuto extends LinearOpMode {
         Slide slide = new Slide(this);
         telemetry.addData("Mode","waiting for start");
         telemetry.update();
+
+        slide.setClawClosed(true);
 
         waitForStart();
         int signalStatus = reader.getSignalStatus(telemetry);
@@ -33,3 +38,4 @@ public class SimplestAuto extends LinearOpMode {
         }
     }
 }
+

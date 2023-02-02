@@ -1,9 +1,6 @@
-package org.firstinspires.ftc.teamcode;
+package org.firstinspires.ftc.teamcode.control;
 
-import com.qualcomm.robotcore.eventloop.opmode.Autonomous;
 import com.qualcomm.robotcore.eventloop.opmode.LinearOpMode;
-import com.qualcomm.robotcore.eventloop.opmode.TeleOp;
-import com.qualcomm.robotcore.hardware.DcMotor;
 
 import org.firstinspires.ftc.robotcore.external.Telemetry;
 import org.firstinspires.ftc.robotcore.external.hardware.camera.WebcamName;
@@ -11,8 +8,6 @@ import org.openftc.apriltag.AprilTagDetection;
 import org.openftc.easyopencv.OpenCvCamera;
 import org.openftc.easyopencv.OpenCvCameraFactory;
 import org.openftc.easyopencv.OpenCvCameraRotation;
-import org.openftc.easyopencv.OpenCvInternalCamera;
-import org.openftc.easyopencv.OpenCvInternalCamera2;
 
 import org.opencv.calib3d.Calib3d;
 import org.opencv.core.CvType;
@@ -24,28 +19,12 @@ import org.opencv.core.Point;
 import org.opencv.core.Point3;
 import org.opencv.core.Scalar;
 import org.opencv.imgproc.Imgproc;
-import org.openftc.apriltag.AprilTagDetection;
 import org.openftc.apriltag.AprilTagDetectorJNI;
 import org.openftc.easyopencv.OpenCvPipeline;
 
 import java.util.ArrayList;
 
-@Autonomous(name="Basic: Linear OpMode", group="Linear Opmode")
-public class Auto extends LinearOpMode {
-    @Override
-    public void runOpMode() {
-        SignalReader reader = new SignalReader(this);
-
-        int signalStatus = -1;
-        waitForStart();
-        signalStatus = reader.getSignalStatus(telemetry);
-        telemetry.addData("signalStatus",signalStatus);
-        telemetry.update();
-        sleep(3000);
-    }
-}
-
-class SignalReader {
+public class SignalReader {
     OpenCvCamera camera;
     AprilTagDetectionPipeline aprilTagDetectionPipeline;
 
