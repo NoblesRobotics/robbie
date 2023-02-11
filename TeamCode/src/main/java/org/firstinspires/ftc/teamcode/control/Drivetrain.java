@@ -12,16 +12,21 @@ import org.firstinspires.ftc.robotcore.external.navigation.AxesOrder;
 import org.firstinspires.ftc.robotcore.external.navigation.AxesReference;
 import org.firstinspires.ftc.robotcore.external.navigation.DistanceUnit;
 import org.firstinspires.ftc.robotcore.external.navigation.Orientation;
+import org.firstinspires.ftc.teamcode.callback.Callback;
+import org.firstinspires.ftc.teamcode.callback.CallbackManager;
+import org.firstinspires.ftc.teamcode.callback.DriveCallback;
+import org.firstinspires.ftc.teamcode.callback.TimeCallback;
 
 public class Drivetrain {
     LinearOpMode opMode;
     double power;
+    public double angleGain = 0.075;
 
     DriveMotors motors;
     DistanceSensor distanceSensor;
     BNO055IMU imu;
 
-    AngleContext forwardContext,globalContext;
+    public AngleContext angleContext;
 
     final double TICKS_PER_REV = 537.6,MM_PER_REV = Math.PI * 96,MM_PER_INCH = 25.4;
 
@@ -45,34 +50,105 @@ public class Drivetrain {
             opMode.idle();
         }
 
-        forwardContext = new AngleContext(imu);
-        globalContext = new AngleContext(imu);
+        angleContext = new AngleContext(imu);
     }
+
+    public void setPower(double newPower) {
+        power = newPower;
+    }
+
+    public void setAngleGain(double gain) {
+        angleGain = gain;
+    }
+
+    public void setGlobalAngle(double angle) { angleContext.setGlobalAngle(angle); }
+
+    public void resetAngle() { angleContext.resetAngle(); }
 
     public void gamepadMove(double drive,double strafe,double turn) {
         motors.setMovement(drive,strafe,turn);
-        forwardContext.resetAngle();
+        //angleContext.resetAngle();
     }
 
     private double runProgressTrapezoid(double progress,double minInitial) {
         if ( progress < 0.2 ) return Math.max(progress / 0.2,minInitial);
-        else if ( progress > 0.4 ) return Math.max((1 - progress) / 0.6,0.1);
+        else if ( progress > 0.6 ) return Math.max((1 - progress) / 0.4,0.1);
         else return 1;
     }
 
-    final double ANGLE_CORRECTION_GAIN = 0.1;
-
-    private double getAngleCorrection(boolean useGlobal) {
-        if ( useGlobal ) return -globalContext.getAngle() * ANGLE_CORRECTION_GAIN;
-        else return -forwardContext.getAngle() * ANGLE_CORRECTION_GAIN;
+    private double getAngleCorrection() {
+        return -angleContext.getAngle() * angleGain;
     }
 
-    private double getAngleCorrection() { return getAngleCorrection(false); }
+    public void drive(double inches,double constantPower) {
+        double absInches = Math.abs(inches);
+        double absTicks = absInches * MM_PER_INCH / MM_PER_REV * TICKS_PER_REV;
 
-    final double NON_STALL_TICKS_PER_S = TICKS_PER_REV * 0.5;
-    final double STALL_CHECK_PERIOD_S = 0.5;
+        ElapsedTime timer = new ElapsedTime();
 
-    public void drive(double inches,boolean useGlobal) {
+        motors.resetPosition();
+        double avgCurrentPosition = 0;
+        while ( (avgCurrentPosition = Math.abs(motors.getAveragePosition())) < absTicks ) {
+            if ( timer.seconds() >= 3 || opMode.gamepad1.y ) break;
+
+            double progress = avgCurrentPosition / absTicks;
+            double driveRatio = runProgressTrapezoid(progress,0.75);
+            double correction = getAngleCorrection();
+            double actualPower = Math.max(power * driveRatio,0.2);
+            if ( constantPower != -1 ) actualPower = constantPower;
+            motors.setMovement(Math.signum(inches) * actualPower,0,correction * power);
+            opMode.telemetry.addData("angle",angleContext.getAngle());
+            opMode.telemetry.addData("forwardAngle",angleContext.forwardAngle);
+            opMode.telemetry.addData("timer",timer.seconds());
+            opMode.telemetry.update();
+        }
+
+        motors.setMovement(0,0,0);
+        opMode.sleep(175);
+    }
+
+    public void drive(double inches) { drive(inches,-1); }
+
+    public void driveAsync(double inches,CallbackManager callbackManager,DriveCallback finalCallback) {
+        double absInches = Math.abs(inches);
+        double absTicks = absInches * MM_PER_INCH / MM_PER_REV * TICKS_PER_REV;
+
+        ElapsedTime timer = new ElapsedTime();
+        final double[] lastAvgPosition = {0};
+
+        motors.resetPosition();
+        callbackManager.add(new Callback() {
+            @Override
+            public boolean update() {
+                boolean endCondition = false;
+                double avgCurrentPosition;
+                if ( (avgCurrentPosition = Math.abs(motors.getAveragePosition())) >= absTicks ) endCondition = true;
+                if ( timer.seconds() >= 3 || opMode.gamepad1.y ) endCondition = true;
+                if ( endCondition ) {
+                    motors.setMovement(0,0,0);
+                    callbackManager.add(new TimeCallback(0.175) {
+                        @Override
+                        public void onFinished() {
+                            finalCallback.onFinished();
+                        }
+                    });
+                    return true;
+                }
+
+                double progress = avgCurrentPosition / absTicks;
+                double driveRatio = runProgressTrapezoid(progress,0.75);
+                double correction = getAngleCorrection();
+                motors.setMovement(Math.signum(inches) * Math.max(power * driveRatio,0.2),0,correction * power);
+                opMode.telemetry.addData("angle",angleContext.getAngle());
+                opMode.telemetry.addData("forwardAngle",angleContext.forwardAngle);
+                opMode.telemetry.addData("timer",timer.seconds());
+                opMode.telemetry.update();
+                return false;
+            }
+        });
+    }
+
+    public void strafe(double inches) {
         double absInches = Math.abs(inches);
         double absTicks = absInches * MM_PER_INCH / MM_PER_REV * TICKS_PER_REV;
 
@@ -82,17 +158,12 @@ public class Drivetrain {
         motors.resetPosition();
         double avgCurrentPosition = 0;
         while ( (avgCurrentPosition = Math.abs(motors.getAveragePosition())) < absTicks ) {
-            if ( timer.seconds() >= STALL_CHECK_PERIOD_S ) {
-                if ( avgCurrentPosition - lastAvgPosition < NON_STALL_TICKS_PER_S * STALL_CHECK_PERIOD_S ) break;
-                lastAvgPosition = avgCurrentPosition;
-                timer.reset();
-            }
-
             double progress = avgCurrentPosition / absTicks;
             double driveRatio = runProgressTrapezoid(progress,0.75);
-            double correction = getAngleCorrection(useGlobal);
-            motors.setMovement(Math.signum(inches) * Math.max(power * driveRatio,0.2),0,correction * power * driveRatio);
-            opMode.telemetry.addData("angle",globalContext.getAngle());
+            double correction = getAngleCorrection();
+            motors.setMovement(0,Math.signum(inches) * Math.max(power * driveRatio,0.2),correction * power);
+            opMode.telemetry.addData("angle",angleContext.getAngle());
+            opMode.telemetry.addData("forwardAngle",angleContext.forwardAngle);
             opMode.telemetry.update();
         }
 
@@ -100,46 +171,54 @@ public class Drivetrain {
         opMode.sleep(175);
     }
 
-    public void drive(double inches) { drive(inches,false); }
+    public boolean driveToDistance(double inches,double security) {
+        //inches -= 1;
+        ElapsedTime timer = new ElapsedTime();
+        boolean success = true;
 
-    public void driveToDistance(double inches,double security) {
-        forwardContext.resetAngle();
+        angleContext.resetAngle();
         double toDrive = distanceSensor.getDistance(DistanceUnit.INCH) - inches;
         while ( Math.abs(toDrive) > security ) {
+            opMode.telemetry.addData("timer",timer.seconds());
+            opMode.telemetry.update();
+            if ( timer.seconds() >= 3 || opMode.gamepad1.y ) {
+                success = false;
+                break;
+            }
+
             double correction = getAngleCorrection();
-            motors.setMovement(power * -Math.signum(toDrive) * 0.5,0,power * correction * 0.5);
+            motors.setMovement(power * -Math.signum(toDrive) * 0.2,0,power * correction * 0.2);
             toDrive = distanceSensor.getDistance(DistanceUnit.INCH) - inches;
         }
 
         motors.setMovement(0,0,0);
         opMode.sleep(175);
+        return success;
     }
 
-    public void driveToDistance(double inches) { driveToDistance(inches,0.5); }
+    public boolean driveToDistance(double inches) { return driveToDistance(inches,0.2); }
 
-    public void rotateTo(int angle,double security) {
-        rotate((int) (angle - globalContext.getAngle()),security);
-    }
+    public void rotateTo(int angle,double security,double speedFactor) {
+        double turnDegrees = angle - angleContext.forwardAngle;
 
-    public void rotateTo(int angle) { rotateTo(angle,0.1); }
-
-    private void rotate(int degrees,double security) {
-        forwardContext.resetAngle();
-
+        angleContext.resetAngle();
         double forwardAngle = 0;
-        while ( opMode.opModeIsActive() && Math.abs(forwardAngle - degrees) > security ) {
-            globalContext.getAngle();
-            double progress = 1 - (Math.abs(forwardAngle - degrees) / Math.abs(degrees));
+        while ( opMode.opModeIsActive() && Math.abs(forwardAngle - turnDegrees) > security ) {
+            double progress = 1 - (Math.abs(forwardAngle - turnDegrees) / Math.abs(turnDegrees));
             double driveRatio = runProgressTrapezoid(progress,0.5) * 0.5;
 
-            motors.setMovement(0,0,Math.signum(degrees - forwardAngle) * Math.max(power * driveRatio,0.1));
-            forwardAngle = forwardContext.getAngle();
+            motors.setMovement(0,0,Math.signum(turnDegrees - forwardAngle) * Math.max(power * driveRatio,0.1) * speedFactor);
+            forwardAngle = angleContext.getAngle();
         }
 
         motors.setMovement(0,0,0);
         opMode.sleep(175);
-        forwardContext.resetAngle();
+        angleContext.forwardAngle = angle;
     }
+
+    public void rotateTo(int angle,double security) { rotateTo(angle,security,1); }
+
+    public void rotateTo(int angle) { rotateTo(angle,0.1,1); }
 }
 
 class DriveMotors {
@@ -171,38 +250,38 @@ class DriveMotors {
     }
 
     public double getAveragePosition() {
-        return Math.abs(
-            (
-                tlMotor.getCurrentPosition() - tlMotorStart +
-                trMotor.getCurrentPosition() - trMotorStart +
-                blMotor.getCurrentPosition() - blMotorStart +
-                brMotor.getCurrentPosition() - brMotorStart
-            ) / 4.0
-        );
+        return (
+            Math.abs(tlMotor.getCurrentPosition() - tlMotorStart) +
+            Math.abs(trMotor.getCurrentPosition() - trMotorStart) +
+            Math.abs(blMotor.getCurrentPosition() - blMotorStart) +
+            Math.abs(brMotor.getCurrentPosition() - brMotorStart)
+        ) / 4.0;
     }
 
     public void setMovement(double drive,double strafe,double turn) {
-        tlMotor.setPower(drive + 0.8 * strafe - turn);
-        trMotor.setPower(drive - strafe + turn);
-        blMotor.setPower(drive - 0.8 * strafe - turn);
-        brMotor.setPower(drive + strafe + turn);
+        tlMotor.setPower(drive + strafe - turn);
+        trMotor.setPower(drive + strafe + turn);
+        blMotor.setPower(drive - strafe - turn);
+        brMotor.setPower(drive - strafe + turn);
     }
 }
 
 class AngleContext {
+    double forwardAngle;
     BNO055IMU imu;
     Orientation lastAngles = new Orientation();
-    double globalAngle,forwardAngle;
+    double globalAngle = 0;
 
     public AngleContext(BNO055IMU imu) {
         this.imu = imu;
     }
 
     public void resetAngle() {
-        lastAngles = imu.getAngularOrientation(AxesReference.INTRINSIC,AxesOrder.ZYX,AngleUnit.DEGREES);
-        globalAngle = 0;
-        forwardAngle = 0;
+        getAngle();
+        forwardAngle = globalAngle;
     }
+
+    public void setGlobalAngle(double angle) { globalAngle = angle; }
 
     public double getAngle() {
         Orientation angles = imu.getAngularOrientation(AxesReference.INTRINSIC,AxesOrder.ZYX,AngleUnit.DEGREES);
@@ -231,4 +310,32 @@ class AngleContext {
         //motors.setMovement(0,0,0.2);
         //opMode.sleep(150);
         motors.setMovement(0,0,0);
+    }*/
+
+/*public void driveTurn(double inches) {
+        double absInches = Math.abs(inches);
+        double absTicks = absInches * MM_PER_INCH / MM_PER_REV * TICKS_PER_REV;
+
+        ElapsedTime timer = new ElapsedTime();
+        double lastAvgPosition = 0;
+
+        motors.resetPosition();
+        double avgCurrentPosition = 0;
+        while ( (avgCurrentPosition = Math.abs(motors.getAveragePosition())) < absTicks ) {
+            if ( timer.seconds() >= STALL_CHECK_PERIOD_S ) {
+                if ( avgCurrentPosition - lastAvgPosition < NON_STALL_TICKS_PER_S * STALL_CHECK_PERIOD_S ) break;
+                lastAvgPosition = avgCurrentPosition;
+                timer.reset();
+            }
+
+            double progress = avgCurrentPosition / absTicks;
+            double driveRatio = runProgressTrapezoid(progress,0.75);
+            motors.setMovement(Math.signum(inches) * Math.max(power * driveRatio,0.2),0,Math.signum(inches) * Math.max(power * driveRatio,0.2) * 0.6);
+            opMode.telemetry.addData("angle",angleContext.getAngle());
+            opMode.telemetry.addData("forwardAngle",angleContext.forwardAngle);
+            opMode.telemetry.update();
+        }
+
+        motors.setMovement(0,0,0);
+        opMode.sleep(175);
     }*/

@@ -2,13 +2,13 @@ package org.firstinspires.ftc.teamcode.opmodes;
 
 import com.qualcomm.robotcore.eventloop.opmode.LinearOpMode;
 import com.qualcomm.robotcore.eventloop.opmode.TeleOp;
-import com.qualcomm.robotcore.util.ElapsedTime;
 
+import org.firstinspires.ftc.teamcode.callback.Callback;
+import org.firstinspires.ftc.teamcode.callback.CallbackManager;
+import org.firstinspires.ftc.teamcode.callback.DriveCallback;
 import org.firstinspires.ftc.teamcode.control.Drivetrain;
 import org.firstinspires.ftc.teamcode.control.Slide;
-
-import java.util.ArrayList;
-import java.util.List;
+import org.firstinspires.ftc.teamcode.callback.TimeCallback;
 
 @TeleOp(name="Main TeleOp",group="Linear OpMode")
 public class MainTeleOp extends LinearOpMode {
@@ -17,22 +17,27 @@ public class MainTeleOp extends LinearOpMode {
         CallbackManager callbackManager = new CallbackManager();
 
         Drivetrain drivetrain = new Drivetrain(this,0.5);
+        drivetrain.setGlobalAngle(90);
         Slide slide = new Slide(this);
 
         waitForStart();
 
-        boolean isClawClosed = false;
-        boolean isLiftScoring = false;
+        final boolean[] isClawClosed = {false};
+        final boolean[] isLiftScoring = {false};
         boolean clawCommandNow;
         boolean clawCommandCaught = false;
+        boolean leftCommandCaught = false;
+        boolean rightCommandCaught = false;
+        final int[] liftSequenceIndex = {0};
+        final boolean[] gamepadActive = {true};
 
         slide.setClawClosed(false);
 
         while ( opModeIsActive() ) {
             double drive = gamepad1.left_stick_y;
             double strafe = -gamepad1.left_stick_x;
-            double turn = gamepad1.right_stick_x;
-            drivetrain.gamepadMove(drive,strafe,turn);
+            double turn = -gamepad1.right_stick_x / 2;
+            if (gamepadActive[0]) drivetrain.gamepadMove(drive,strafe,turn);
 
             clawCommandNow = false;
             if ( gamepad1.right_trigger > 0 ) {
@@ -44,16 +49,181 @@ public class MainTeleOp extends LinearOpMode {
                 clawCommandCaught = false;
             }
 
-            if ( isLiftScoring ) {
-                if ( clawCommandNow && isClawClosed ) {
+            /*if ( gamepad1.dpad_left ) {
+                if ( ! leftCommandCaught ) {
+                    if ( liftSequenceIndex[0] > 0 ) liftSequenceIndex[0]--;
+                    slide.setLiftStage(Slide.LIFT_SEQUENCE[liftSequenceIndex[0]]);
+                    leftCommandCaught = true;
+                }
+            } else {
+                leftCommandCaught = false;
+            }
+            if ( gamepad1.dpad_right ) {
+                if ( ! rightCommandCaught ) {
+                    if ( liftSequenceIndex[0] < Slide.LIFT_SEQUENCE.length - 1 ) liftSequenceIndex[0]++;
+                    slide.setLiftStage(Slide.LIFT_SEQUENCE[liftSequenceIndex[0]]);
+                    rightCommandCaught = true;
+                }
+            } else {
+                rightCommandCaught = false;
+            }*/
+
+            if ( gamepad1.dpad_left ) slide.setLiftStage(Slide.MEDIUM_LIFT);
+            else if ( gamepad1.dpad_right ) slide.setLiftStage(Slide.LOW_LIFT);
+
+            if (isLiftScoring[0]) {
+                if ( clawCommandNow && isClawClosed[0]) {
                     slide.setClawClosed(false);
-                    isClawClosed = false;
+                    isClawClosed[0] = false;
                 } else if ( gamepad1.dpad_down ) {
                     slide.setClawClosed(true);
-                    slide.setTurretBackwards(false);
+                    slide.setTurret(Slide.FORWARDS_TURRET);
                     callbackManager.add(new TimeCallback(0.5) {
                         @Override
-                        void onFinished() {
+                        public void onFinished() {
+                            liftSequenceIndex[0] = 0;
+                            slide.setLiftStage(Slide.GROUND_LIFT);
+                            callbackManager.add(new Callback() {
+                                @Override
+                                public boolean update() {
+                                    if (slide.getActualLiftStage() <= Slide.GROUND_LIFT) {
+                                        slide.setClawClosed(false);
+                                        return true;
+                                    } else {
+                                        return false;
+                                    }
+                                }
+                            });
+                        }
+                    });
+                    isClawClosed[0] = false;
+                    isLiftScoring[0] = false;
+                }
+            } else { // lift not scoring
+                if ( clawCommandNow ) {
+                    if (isClawClosed[0]) {
+                        slide.setTurret(Slide.FORWARDS_TURRET);
+                        sleep(300);
+                        slide.setLiftStage(Slide.GROUND_LIFT);
+                        callbackManager.add(new Callback() {
+                            @Override
+                            public boolean update() {
+                                if ( slide.getActualLiftStage() <= Slide.GROUND_LIFT ) {
+                                    slide.setClawClosed(false);
+                                    return true;
+                                } else {
+                                    return false;
+                                }
+                            }
+                        });
+                        isClawClosed[0] = false;
+                    } else { // claw is not closed
+                        slide.setClawClosed(true);
+                        sleep(500);
+                        slide.setLiftStage(Slide.MAX_SAFE_DRIVING_LIFT);
+                        callbackManager.add(new Callback() {
+                            @Override
+                            public boolean update() {
+                                if ( slide.getActualLiftStage() >= Slide.MAX_SAFE_DRIVING_LIFT ) {
+                                    slide.setTurret(Slide.SIDE_TURRET);
+                                    return true;
+                                } else {
+                                    return false;
+                                }
+                            }
+                        });
+                        isClawClosed[0] = true;
+                    }
+                } else if ( gamepad1.dpad_up && isClawClosed[0]) {
+                    slide.setLiftStage(Slide.HIGH_LIFT);
+                    callbackManager.add(new Callback() {
+                        @Override
+                        public boolean update() {
+                            if ( slide.getActualLiftStage() >= Slide.HIGH_LIFT ) {
+                                slide.setTurret(Slide.BACKWARDS_TURRET);
+                                return true;
+                            } else {
+                                return false;
+                            }
+                        }
+                    });
+                    isLiftScoring[0] = true;
+                }
+            }
+
+            if ( gamepad1.a && gamepadActive[0] ) {
+                // Drive to stick w/ cone
+                drivetrain.setPower(0.5);
+                slide.setClawClosed(true);
+                sleep(500);
+                slide.setLiftStage(Slide.HIGH_LIFT);
+                callbackManager.add(new Callback() {
+                    @Override
+                    public boolean update() {
+                        if ( slide.getActualLiftStage() >= Slide.MIN_SAFE_TURNING_LIFT ) {
+                            slide.setTurret(Slide.SIDE_TURRET);
+                            return true;
+                        } else {
+                            return false;
+                        }
+                    }
+                });
+                drivetrain.rotateTo(0, 0.2);
+                gamepadActive[0] = false;
+                drivetrain.driveAsync(-36,callbackManager,new DriveCallback() {
+                    @Override
+                    public void onFinished() {
+                        gamepadActive[0] = true;
+                        isClawClosed[0] = true;
+                        isLiftScoring[0] = true;
+                        slide.setTurret(Slide.BACKWARDS_TURRET);
+                        drivetrain.rotateTo(0, 0.2);
+                        drivetrain.driveToDistance(1.7);
+                        drivetrain.driveToDistance(1.7);
+                    }
+                });
+            } else if ( gamepad1.x && gamepadActive[0] ) {
+                // Drive to stick w/o cone
+                drivetrain.setPower(0.5);
+                slide.setClawClosed(true);
+                sleep(500);
+                slide.setLiftStage(Slide.HIGH_LIFT);
+                callbackManager.add(new Callback() {
+                    @Override
+                    public boolean update() {
+                        if ( slide.getActualLiftStage() >= Slide.MIN_SAFE_TURNING_LIFT ) {
+                            slide.setTurret(Slide.SIDE_TURRET);
+                            return true;
+                        } else {
+                            return false;
+                        }
+                    }
+                });
+                drivetrain.rotateTo(0, 0.2);
+                gamepadActive[0] = false;
+                drivetrain.driveAsync(-36,callbackManager,new DriveCallback() {
+                    @Override
+                    public void onFinished() {
+                        gamepadActive[0] = true;
+                        isClawClosed[0] = true;
+                        isLiftScoring[0] = true;
+                        slide.setTurret(Slide.BACKWARDS_TURRET);
+                        drivetrain.rotateTo(0, 0.2);
+                        drivetrain.driveToDistance(3);
+                        drivetrain.driveToDistance(3);
+                    }
+                });
+            } else if ( gamepad1.b && gamepadActive[0] ) {
+                // Drive to triangle
+                drivetrain.setPower(0.25);
+                slide.setClawClosed(false);
+                sleep(500);
+                slide.setClawClosed(true);
+                slide.setTurret(Slide.FORWARDS_TURRET);
+                callbackManager.add(new Callback() {
+                    @Override
+                    public boolean update() {
+                        if ( slide.getActualTurret() <= Slide.SIDE_TURRET ) {
                             slide.setLiftStage(Slide.GROUND_LIFT);
                             callbackManager.add(new Callback() {
                                 @Override
@@ -66,107 +236,36 @@ public class MainTeleOp extends LinearOpMode {
                                     }
                                 }
                             });
+                            return true;
+                        } else {
+                            return false;
                         }
-                    });
-                    isClawClosed = false;
-                    isLiftScoring = false;
-                }
-            } else { // lift not scoring
-                if ( clawCommandNow ) {
-                    if ( isClawClosed ) {
-                        slide.setLiftStage(Slide.GROUND_LIFT);
-                        callbackManager.add(new TimeCallback(0.5) {
-                            @Override
-                            void onFinished() {
-                                slide.setClawClosed(false);
-                            }
-                        });
-                        isClawClosed = false;
-                    } else { // claw is not closed
-                        slide.setClawClosed(true);
-                        sleep(500);
-                        slide.setLiftStage(Slide.MAX_SIZE_DRIVING_LIFT);
-                        isClawClosed = true;
                     }
-                } else if ( gamepad1.dpad_up && isClawClosed ) {
-                    slide.setLiftStage(Slide.HIGH_LIFT);
-                    callbackManager.add(new Callback() {
-                        @Override
-                        public boolean update() {
-                            if ( slide.getActualLiftStage() >= Slide.HIGH_LIFT ) {
-                                slide.setTurretBackwards(true);
-                                return true;
-                            } else {
-                                return false;
-                            }
-                        }
-                    });
-                    isLiftScoring = true;
-                }
-            }
-
-            if ( gamepad1.a ) {
-                // Drive to stick w/o cone
-                drivetrain.drive(-68,true);
-                drivetrain.driveToDistance(3);
-            } else if ( gamepad1.x ) {
-                // Drive to stick w/ cone
-                drivetrain.drive(-68, true);
-                drivetrain.driveToDistance(2);
-            } else if ( gamepad1.b ) {
-                // Drive to triangle
-                drivetrain.drive(65, true);
+                });
                 drivetrain.rotateTo(0, 0.2);
+                gamepadActive[0] = false;
+                drivetrain.driveAsync(31, callbackManager, new DriveCallback() {
+                    @Override
+                    public void onFinished() {
+                        gamepadActive[0] = true;
+                        isClawClosed[0] = false;
+                        isLiftScoring[0] = false;
+                        drivetrain.rotateTo(0, 0.2);
+                    }
+                });
             }
 
-            /*if ( gamepad1.a ) slide.turret.setPosition(slide.turret.getPosition() + 0.001);
-            else if ( gamepad1.b ) slide.turret.setPosition(slide.turret.getPosition() - 0.001);*/
+            /*if ( gamepad1.x ) slide.turret.setPosition(slide.turret.getPosition() + 0.001);
+            else if ( gamepad1.y ) slide.turret.setPosition(slide.turret.getPosition() - 0.001);
+            telemetry.addData("turret",slide.turret.getPosition());
+            telemetry.update();*/
+
+            /*if ( gamepad1.x ) slide.setLiftStage(slide.getActualLiftStage() + 4);
+            else if ( gamepad1.y ) slide.setLiftStage(slide.getActualLiftStage() - 4);
+            telemetry.addData("slide",slide.getActualLiftStage());
+            telemetry.update();*/
 
             callbackManager.update();
-        }
-    }
-}
-
-interface Callback {
-    // Return true on completion, false to run on next cycle
-    boolean update();
-}
-
-abstract class TimeCallback implements Callback {
-    ElapsedTime timer;
-    double seconds;
-
-    public TimeCallback(double seconds) {
-        timer = new ElapsedTime();
-        this.seconds = seconds;
-    }
-
-    @Override
-    public boolean update() {
-        if ( timer.seconds() >= seconds ) {
-            onFinished();
-            return true;
-        } else {
-            return false;
-        }
-    }
-
-    abstract void onFinished();
-}
-
-class CallbackManager {
-    List<Callback> callbacks = new ArrayList<>();
-
-    public void add(Callback callback) {
-        callbacks.add(callback);
-    }
-
-    public void update() {
-        for ( int i = 0; i < callbacks.size(); i++ ) {
-            if ( callbacks.get(i).update() ) {
-                callbacks.remove(i);
-                i--;
-            }
         }
     }
 }

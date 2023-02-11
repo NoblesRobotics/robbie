@@ -4,17 +4,22 @@ import com.qualcomm.robotcore.eventloop.opmode.LinearOpMode;
 import com.qualcomm.robotcore.eventloop.opmode.TeleOp;
 import com.qualcomm.robotcore.hardware.DcMotor;
 import com.qualcomm.robotcore.hardware.DistanceSensor;
+import com.qualcomm.robotcore.hardware.Servo;
 
 import org.firstinspires.ftc.robotcore.external.navigation.DistanceUnit;
 
 @TeleOp(name="Testing",group="Linear OpMode")
 public class Testing extends LinearOpMode {
     DcMotor tlMotor,trMotor,blMotor,brMotor,slideMotor;
+    Servo turret,clawLeft,clawRight;
     DistanceSensor sensor;
 
     @Override
     public void runOpMode() {
         sensor = hardwareMap.get(DistanceSensor.class,"da");
+        turret = hardwareMap.get(Servo.class, "sa");
+        telemetry.addData("turret", turret.getPosition());
+        telemetry.update();
 
         /*tlMotor = hardwareMap.get(DcMotor.class,"ma");
         trMotor = hardwareMap.get(DcMotor.class,"mc");
@@ -31,10 +36,27 @@ public class Testing extends LinearOpMode {
         brMotor.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.BRAKE);
         slideMotor.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.BRAKE);*/
 
+        turret = hardwareMap.get(Servo.class, "sa");
+        clawLeft = hardwareMap.get(Servo.class, "sb");
+        clawRight = hardwareMap.get(Servo.class, "sc");
+
         waitForStart();
 
-        while ( opModeIsActive() ) {
+        /*while ( opModeIsActive() ) {
             telemetry.addData("distance",sensor.getDistance(DistanceUnit.INCH));
+            telemetry.update();
+        }*/
+
+        while ( opModeIsActive() ) {
+            if ( gamepad1.dpad_up ) turret.setPosition(turret.getPosition() + 0.001);
+            else if ( gamepad1.dpad_down ) turret.setPosition(turret.getPosition() - 0.001);
+            telemetry.addData("turret",turret.getPosition());
+            if ( gamepad1.a ) clawLeft.setPosition(clawLeft.getPosition() + 0.001);
+            else if ( gamepad1.b ) clawLeft.setPosition(clawLeft.getPosition() - 0.001);
+            telemetry.addData("clawLeft",clawLeft.getPosition());
+            if ( gamepad1.x ) clawRight.setPosition(clawRight.getPosition() + 0.001);
+            else if ( gamepad1.y ) clawRight.setPosition(clawRight.getPosition() - 0.001);
+            telemetry.addData("clawRight",clawRight.getPosition());
             telemetry.update();
         }
 

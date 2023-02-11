@@ -11,9 +11,38 @@ public class Slide {
 
     public int liftStage;
 
-    public static final double OPEN_LEFT_CLAW = 0.86, CLOSED_LEFT_CLAW = 1, OPEN_RIGHT_CLAW = 0.14, CLOSED_RIGHT_CLAW = 0;
-    public static final int GROUND_LIFT = 0, OFF_GROUND_LIFT = 100, CIRCLE_LIFT = 315, HIGH_LIFT = 3000, CONE_5_LIFT = 460, ABOVE_CONES = 940;
-    public static final int MAX_SIZE_DRIVING_LIFT = 1000;
+    public static final double OPEN_LEFT_CLAW = 1,
+            CLOSED_LEFT_CLAW = 0.86,
+            OPEN_RIGHT_CLAW = 0,
+            CLOSED_RIGHT_CLAW = 0.14;
+
+    public static final int GROUND_LIFT = 0,
+            CONE_2_LIFT = 60,
+            CONE_3_LIFT = 160,
+            CONE_4_LIFT = 290,
+            CONE_5_LIFT = 460,
+            ABOVE_CONES = 940,
+            LOW_LIFT = 1450,
+            MEDIUM_LIFT = 2300,
+            HIGH_LIFT = 3000;
+            //CIRCLE_LIFT = 315
+    public static final int LIFT_SEQUENCE[] = {
+            GROUND_LIFT,
+            CONE_2_LIFT,
+            CONE_3_LIFT,
+            CONE_4_LIFT,
+            CONE_5_LIFT,
+            ABOVE_CONES,
+            LOW_LIFT,
+            MEDIUM_LIFT,
+            HIGH_LIFT
+    };
+    public static final int MAX_SAFE_DRIVING_LIFT = 1000,
+            MIN_SAFE_TURNING_LIFT = 1000;
+
+    public static final double FORWARDS_TURRET = 0,
+            BACKWARDS_TURRET = 0.675,
+            SIDE_TURRET = BACKWARDS_TURRET / 2;
 
     public Slide(LinearOpMode opMode) {
         this.opMode = opMode;
@@ -33,7 +62,7 @@ public class Slide {
     }
 
     public void setClawClosed(boolean closed) {
-        if (closed) {
+        if ( closed ) {
             clawLeft.setPosition(CLOSED_LEFT_CLAW);
             clawRight.setPosition(CLOSED_RIGHT_CLAW);
         } else {
@@ -54,8 +83,9 @@ public class Slide {
         return liftMotor.getCurrentPosition();
     }
 
-    public void setTurretBackwards(boolean backwards) {
-        if ( backwards ) turret.setPosition(0.65);
-        else turret.setPosition(0);
+    public void setTurret(double position) {
+        turret.setPosition(position);
     }
+
+    public double getActualTurret() { return turret.getPosition(); }
 }
